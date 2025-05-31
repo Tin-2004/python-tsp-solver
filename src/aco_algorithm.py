@@ -1,5 +1,6 @@
 import numpy as np
 import random
+import logging # 导入 logging 模块
 
 class AntColonyOptimizationTSP:
     def __init__(self, cities_coords, n_ants, n_iterations, alpha, beta, evaporation_rate, q=1.0, pheromone_init=0.1, start_city_idx=0, end_city_idx=None):
@@ -28,6 +29,9 @@ class AntColonyOptimizationTSP:
         # Heuristic information (inverse of distance)
         self.heuristic = 1.0 / (self.distances + 1e-10) # Add small epsilon to avoid division by zero
         np.fill_diagonal(self.heuristic, 0)
+
+        # 获取logger实例，用于ACO算法内部的日志记录
+        self.logger = logging.getLogger(__name__) # 使用模块名作为logger名
 
 
     def _calculate_distance_matrix(self):
@@ -129,8 +133,8 @@ class AntColonyOptimizationTSP:
         convergence_progress = []
         average_distances_progress = [] # 新增：记录每轮迭代的平均距离
 
-        print(f"初始信息素水平: {self.pheromone_init}")
-        print(f"启发式信息 (部分样本 from city 0): {self.heuristic[0, :5]}")
+        self.logger.info(f"初始信息素水平: {self.pheromone_init}")
+        self.logger.debug(f"启发式信息 (部分样本 from city 0): {self.heuristic[0, :5]}") # 改为 debug 级别
 
 
         for iteration in range(self.n_iterations):
@@ -168,10 +172,10 @@ class AntColonyOptimizationTSP:
             convergence_progress.append(best_overall_distance) # 记录的是到目前为止的全局最优
 
             if iteration % 10 == 0 or iteration == self.n_iterations - 1:
-                print(f"迭代 {iteration+1}/{self.n_iterations} - 当前轮最优: {current_iter_best_distance:.2f}, 全局最优: {best_overall_distance:.2f}, 当前轮平均: {average_distances_progress[-1]:.2f}")
+                self.logger.info(f"迭代 {iteration+1}/{self.n_iterations} - 当前轮最优: {current_iter_best_distance:.2f}, 全局最优: {best_overall_distance:.2f}, 当前轮平均: {average_distances_progress[-1]:.2f}")
 
         if not best_overall_path and self.n_cities > 0 : #容错处理，如果最终没有路径但是城市数量大于0
-            print("警告: 未找到有效路径，将尝试返回一个基于启发式规则的初始路径（如果可能）。")
+            self.logger.warning("警告: 未找到有效路径，将尝试返回一个基于启发式规则的初始路径（如果可能）。")
             # 尝试生成一个简单的路径作为备选，例如，按顺序访问或基于最近邻居的简单构造
             # 这里仅为示例，实际的备选逻辑可能需要更复杂
             if self.n_cities == 1:
@@ -186,6 +190,8 @@ class AntColonyOptimizationTSP:
 
 
         if best_overall_path is None and self.n_cities > 0:
+             # 使用 self.logger 记录错误
+             self.logger.error("ACO算法未能找到任何有效路径。")
              raise RuntimeError("ACO算法未能找到任何有效路径。")
         elif self.n_cities == 0:
              return [], 0, [], []
