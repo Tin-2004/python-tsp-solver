@@ -1,5 +1,6 @@
 import sys
 import os
+import logging # 导入 logging 模块
 
 # Add the project root directory (python-tsp-solver) to sys.path
 # This ensures that imports like 'from src.module' work correctly.
@@ -14,7 +15,7 @@ import random
 from src.utils import total_distance
 
 class GeneticAlgorithmTSP:
-    def __init__(self, cities_coords, population_size, elite_rate, mutation_rate, generations, crossover_rate=0.9, start_city_idx=0, end_city_idx=None): # elite_size -> elite_rate
+    def __init__(self, cities_coords, population_size, elite_rate, mutation_rate, generations, crossover_rate=0.9, start_city_idx=0, end_city_idx=None, tournament_size=2): # Add tournament_size
         self.cities_coords = cities_coords
         self.num_cities = len(cities_coords)
         self.population_size = population_size
@@ -24,7 +25,7 @@ class GeneticAlgorithmTSP:
         # 如果设置了精英比例但计算出的精英数量为0（由于种群太小或比例太低），并且种群大于0，则至少保留一个精英
         if self.elite_rate > 0 and self.elite_size == 0 and self.population_size > 0:
             self.elite_size = 1
-            print(f"提示: 由于种群大小 ({self.population_size}) 和精英比例 ({self.elite_rate}) 导致计算精英数量为0, 已自动设置为保留1个精英。")
+            logging.info(f"提示: 由于种群大小 ({self.population_size}) 和精英比例 ({self.elite_rate}) 导致计算精英数量为0, 已自动设置为保留1个精英。")
 
 
         self.mutation_rate = mutation_rate
@@ -33,6 +34,7 @@ class GeneticAlgorithmTSP:
         self.start_city_idx = start_city_idx
         # 如果未指定 end_city_idx，则默认为最后一个城市
         self.end_city_idx = end_city_idx if end_city_idx is not None else self.num_cities - 1
+        self.tournament_size = tournament_size # Store tournament size
 
         if self.num_cities <= 2:
             raise ValueError("城市数量必须大于2才能进行路径规划。")
@@ -98,47 +100,74 @@ class GeneticAlgorithmTSP:
 
     def _selection_for_breeding(self, ranked_population_with_indices, current_population, num_to_select):
         """
-        选择操作（轮盘赌选择），用于选择父代进行繁殖。
+        选择操作（锦标赛选择），用于选择父代进行繁殖。
         ranked_population_with_indices: list of (original_index, fitness)
         current_population: the actual list of individuals
         num_to_select: how many parent individuals to select
         Returns a list of selected parent individuals (not indices).
         """
         selected_parents = []
-        
-        fitness_values = np.array([item[1] for item in ranked_population_with_indices])
-        
-        if np.sum(fitness_values <= 0) == len(fitness_values) or np.sum(fitness_values) == 0:
-            available_individuals = list(current_population) # Get actual individuals
-            if not available_individuals: # Should not happen if population_size > 0
-                return []
-            for _ in range(num_to_select):
-                selected_parents.append(list(random.choice(available_individuals)))
-        else:
-            positive_fitness_values = np.maximum(fitness_values, 1e-9)
-            total_fitness = np.sum(positive_fitness_values)
+        population_size = len(current_population)
 
-            if total_fitness == 0:
-                available_individuals = list(current_population)
-                if not available_individuals:
-                    return []
-                for _ in range(num_to_select):
-                    selected_parents.append(list(random.choice(available_individuals)))
+        if population_size == 0:
+            return [] # Cannot select from an empty population
+
+        # Determine the actual tournament size, ensuring it's valid
+        actual_tournament_size = min(self.tournament_size, population_size)
+        if actual_tournament_size <= 0: # If self.tournament_size was 0 or negative, or pop_size is 0
+            if population_size > 0:
+                actual_tournament_size = 1 # Fallback to selecting the best of 1 (random pick effectively)
             else:
-                selection_probs = positive_fitness_values / total_fitness
-                cumulative_probs = np.cumsum(selection_probs)
-                
-                for _ in range(num_to_select):
-                    pick = random.random()
-                    chosen_original_index = -1
-                    for i in range(len(ranked_population_with_indices)):
-                        if pick <= cumulative_probs[i]:
-                            chosen_original_index = ranked_population_with_indices[i][0]
-                            break
-                    if chosen_original_index == -1: # Fallback
-                        chosen_original_index = ranked_population_with_indices[-1][0]
-                    
-                    selected_parents.append(list(current_population[chosen_original_index]))
+                return [] # Still cannot select if population is truly empty
+
+        if not ranked_population_with_indices: # Should not happen if current_population is not empty
+            # Fallback: if ranked_population_with_indices is empty for some reason, resort to random choice
+            for _ in range(num_to_select):
+                if current_population:
+                    selected_parents.append(list(random.choice(current_population)))
+            return selected_parents
+
+        for _ in range(num_to_select):
+            # Randomly select 'actual_tournament_size' contenders from the ranked population list
+            # Each contender is a tuple (original_index, fitness_value)
+            try:
+                # Ensure we can sample 'actual_tournament_size' items
+                # If ranked_population_with_indices has fewer items than actual_tournament_size (e.g. pop_size < tournament_size)
+                # then sample all available items.
+                num_candidates_to_sample = min(actual_tournament_size, len(ranked_population_with_indices))
+                if num_candidates_to_sample == 0 and len(ranked_population_with_indices) > 0: # e.g. actual_tournament_size was forced to 0 but list not empty
+                    num_candidates_to_sample = 1 # sample at least one if possible
+                elif num_candidates_to_sample == 0: # no candidates to sample
+                    if current_population: # fallback to random choice from current_pop
+                         selected_parents.append(list(random.choice(current_population)))
+                    continue
+
+
+                tournament_contenders = random.sample(ranked_population_with_indices, num_candidates_to_sample)
+            except ValueError: 
+                # This can happen if ranked_population_with_indices is empty or smaller than num_candidates_to_sample
+                # (though num_candidates_to_sample logic should prevent sampling more than available)
+                # Fallback to picking a random individual from the current_population
+                if current_population:
+                    selected_parents.append(list(random.choice(current_population)))
+                continue # Move to select the next parent
+
+            winner_info = None # Stores (original_index, fitness) of the winner
+            best_fitness_in_tournament = -float('inf')
+
+            for original_idx, fitness_val in tournament_contenders:
+                if fitness_val > best_fitness_in_tournament:
+                    best_fitness_in_tournament = fitness_val
+                    winner_info = (original_idx, fitness_val)
+            
+            if winner_info:
+                # winner_info[0] is the original index in current_population
+                selected_parents.append(list(current_population[winner_info[0]]))
+            else:
+                # Fallback if no winner was determined (e.g., all fitnesses were -inf, or empty contenders list)
+                if current_population: # Ensure current_population is not empty
+                    selected_parents.append(list(random.choice(current_population)))
+        
         return selected_parents
 
     def _mating_pool(self, population, selection_results):
@@ -249,17 +278,17 @@ class GeneticAlgorithmTSP:
             best_overall_distance = total_distance(best_full_route, self.cities_coords)
             convergence_progress = [best_overall_distance] * self.generations
             average_distances_progress = [best_overall_distance] * self.generations
-            print(f"只有起点和终点，路径固定，距离: {best_overall_distance:.2f}")
+            logging.info(f"只有起点和终点，路径固定，距离: {best_overall_distance:.2f}")
             return best_full_route, best_overall_distance, convergence_progress, average_distances_progress
         
         # Handle case where num_cities_to_permute is 1 (only one intermediate city)
         # Crossover and mutation might behave unusually.
         # GA might not be very effective here, but let it run.
         if self.num_cities_to_permute == 1:
-            print("警告: 只有一个中间城市需要排列，遗传算法可能不是最优选择或行为可能受限。")
+            logging.warning("警告: 只有一个中间城市需要排列，遗传算法可能不是最优选择或行为可能受限。")
 
 
-        print(f"开始遗传算法，总共 {self.generations} 代，种群大小 {self.population_size}, 精英数量: {self.elite_size}")
+        logging.info(f"开始遗传算法，总共 {self.generations} 代，种群大小 {self.population_size}, 精英数量: {self.elite_size}")
 
         for generation in range(self.generations):
             current_generation_population = population 
@@ -286,7 +315,7 @@ class GeneticAlgorithmTSP:
             convergence_progress.append(best_overall_distance)
 
             if generation % 10 == 0 or generation == self.generations - 1:
-                print(f"代 {generation+1}/{self.generations} - 当前代最优: {current_gen_best_distance:.2f}, 全局最优: {best_overall_distance:.2f}, 当前代平均: {current_gen_avg_distance:.2f}")
+                logging.info(f"代 {generation+1}/{self.generations} - 当前代最优: {current_gen_best_distance:.2f}, 全局最优: {best_overall_distance:.2f}, 当前代平均: {current_gen_avg_distance:.2f}")
 
             next_generation_population = []
 
@@ -316,7 +345,7 @@ class GeneticAlgorithmTSP:
                 if not parent_pool or len(parent_pool) < 2 and num_offspring_to_generate > 0 :
                     # Fallback: if parent pool is too small, fill with random individuals from current pop
                     # This might happen if selection_for_breeding has issues or pop is tiny.
-                    # print("警告: 父代选择池过小或为空，使用随机父代填充。")
+                    # logging.info("警告: 父代选择池过小或为空，使用随机父代填充。")
                     temp_fill_needed = num_offspring_to_generate - offspring_generated_count
                     for _ in range(temp_fill_needed):
                         if current_generation_population: # Check if current_generation_population is not empty
@@ -382,7 +411,7 @@ class GeneticAlgorithmTSP:
         # Final checks and error handling for result consistency
         if best_overall_route_perm is None:
             if self.num_cities_to_permute > 0 : # If there were cities to permute but no best_overall_route_perm
-                print("警告: GA未能确定最优个体排列，将尝试使用最后一代的最优个体。")
+                logging.warning("警告: GA未能确定最优个体排列，将尝试使用最后一代的最优个体。")
                 if population: # Check if population is not empty
                     last_gen_ranked = self._rank_routes(population)
                     if last_gen_ranked:
