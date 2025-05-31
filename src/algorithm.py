@@ -15,7 +15,7 @@ import random
 from src.utils import total_distance
 
 class GeneticAlgorithmTSP:
-    def __init__(self, cities_coords, population_size, elite_rate, mutation_rate, generations, crossover_rate=0.9, start_city_idx=0, end_city_idx=None, tournament_size=2): # Add tournament_size
+    def __init__(self, cities_coords, population_size, elite_rate, mutation_rate, generations, crossover_rate=0.9, start_city_idx=0, end_city_idx=None, tournament_size=1): # Add tournament_size
         self.cities_coords = cities_coords
         self.num_cities = len(cities_coords)
         self.population_size = population_size
