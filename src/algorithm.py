@@ -155,21 +155,20 @@ class GeneticAlgorithmTSP:
             print(f"最短距离: {best_distance}")
             return best_route, best_distance, []
 
-
         pop = self._create_initial_population()
         
         # 存储每一代的最佳距离，用于绘图
         progress = []
         
-        # 初始种群的最佳距离
+        # 初始化全局最优解
         initial_ranked_pop = self._rank_routes(pop)
-        initial_best_perm_idx = initial_ranked_pop[0][0]
-        initial_best_perm = pop[initial_best_perm_idx]
-        initial_best_route = self._get_full_route(initial_best_perm)
-        initial_best_distance = total_distance(initial_best_route, self.cities_coords)
-        progress.append(initial_best_distance)
+        overall_best_perm_idx = initial_ranked_pop[0][0]
+        overall_best_perm = pop[overall_best_perm_idx]
+        overall_best_route = self._get_full_route(overall_best_perm)
+        overall_best_distance = total_distance(overall_best_route, self.cities_coords)
+        progress.append(overall_best_distance)
 
-        print(f"初始种群最佳距离: {initial_best_distance}")
+        print(f"初始种群最佳距离: {overall_best_distance}")
 
         for i in range(self.generations):
             ranked_pop = self._rank_routes(pop)
@@ -179,19 +178,21 @@ class GeneticAlgorithmTSP:
             next_generation = self._mutate_population(children)
             pop = next_generation
 
-            current_best_perm_idx = self._rank_routes(pop)[0][0]
-            current_best_perm = pop[current_best_perm_idx]
-            current_best_route = self._get_full_route(current_best_perm)
-            current_best_distance = total_distance(current_best_route, self.cities_coords)
-            progress.append(current_best_distance)
+            current_gen_best_perm_idx = self._rank_routes(pop)[0][0]
+            current_gen_best_perm = pop[current_gen_best_perm_idx]
+            current_gen_best_route = self._get_full_route(current_gen_best_perm)
+            current_gen_best_distance = total_distance(current_gen_best_route, self.cities_coords)
+            progress.append(current_gen_best_distance) # 记录当前代最佳距离用于收敛曲线
+
+            # 更新全局最优解
+            if current_gen_best_distance < overall_best_distance:
+                overall_best_distance = current_gen_best_distance
+                overall_best_perm = current_gen_best_perm
             
-            if (i + 1) % 10 == 0 or i == 0 : # 每10代打印一次信息
-                print(f"第 {i+1} 代: 最佳距离 = {current_best_distance:.2f}")
+            if (i + 1) % 10 == 0 or i == 0 : # 每10代打印一次信息 (使用当前代最佳)
+                print(f"第 {i+1} 代: 当前代最佳距离 = {current_gen_best_distance:.2f}, 全局最佳距离 = {overall_best_distance:.2f}")
         
-        final_ranked_pop = self._rank_routes(pop)
-        best_perm_idx = final_ranked_pop[0][0]
-        best_perm = pop[best_perm_idx]
-        best_route = self._get_full_route(best_perm)
-        best_distance = total_distance(best_route, self.cities_coords)
+        # 返回全局最优解
+        final_best_route = self._get_full_route(overall_best_perm)
         
-        return best_route, best_distance, progress
+        return final_best_route, overall_best_distance, progress

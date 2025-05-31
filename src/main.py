@@ -1,10 +1,20 @@
 # File: /python-tsp-solver/python-tsp-solver/src/main.py
 
+import sys
+import os
+
+# Add the project root directory (python-tsp-solver) to sys.path
+# This ensures that imports like 'from src.module' work correctly.
+# os.path.dirname(__file__) is the 'src' directory.
+# os.path.join(os.path.dirname(__file__), '..') is the 'python-tsp-solver' directory.
+_PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if _PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, _PROJECT_ROOT)
+
 import numpy as np
 import matplotlib.pyplot as plt
 from src.algorithm import GeneticAlgorithmTSP  # Removed TSPSolver
 from src.utils import load_coordinates, format_results, total_distance
-import os
 
 def plot_route_and_convergence(coords, route, progress, title="TSP Solution"):
     """绘制路线图和收敛曲线"""
@@ -70,12 +80,12 @@ def main():
     print(f"成功加载 {num_cities} 个城市坐标。")
 
     # 遗传算法参数
-    population_size = 100  # 种群大小
-    elite_size = 20      # 精英个体数量 (保留多少最优个体到下一代)
-    mutation_rate = 0.01 # 变异率
-    generations = 200    # 迭代代数
-    
-    # 要求从第一个城市出发 (索引为0)，在最后一个城市结束 (索引为 num_cities - 1)
+    population_size = 300  # 种群大小 (可以尝试增加到 300-500)
+    elite_size = 60      # 精英个体数量 (保持种群大小的10-20%)
+    mutation_rate = 0.005 # 变异率 (从 0.02 降低，可以尝试 0.01 或 0.005)
+    generations = 2000   # 迭代代数 (从 300 增加，可以尝试 1000, 2000 或更多)
+
+    # 要求从第一个城市出发 (索引为0)，在最后一个城市结束
     start_city_index = 0
     end_city_index = num_cities - 1
 
