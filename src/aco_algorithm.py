@@ -3,7 +3,7 @@ import random
 import logging # 导入 logging 模块
 
 class AntColonyOptimizationTSP:
-    def __init__(self, cities_coords, n_ants, n_iterations, alpha, beta, evaporation_rate, q=1.0, pheromone_init=0.1, start_city_idx=0, end_city_idx=None):
+    def __init__(self, cities_coords, n_ants, n_iterations, alpha, beta, evaporation_rate, q=1.0, pheromone_init=0.1, start_city_idx=0, end_city_idx=None): # 新增 elite_weight
         self.cities_coords = np.array(cities_coords)
         self.n_cities = len(cities_coords)
         self.n_ants = n_ants
@@ -29,6 +29,10 @@ class AntColonyOptimizationTSP:
         # Heuristic information (inverse of distance)
         self.heuristic = 1.0 / (self.distances + 1e-10) # Add small epsilon to avoid division by zero
         np.fill_diagonal(self.heuristic, 0)
+
+        # MMAS Pheromone limits
+        self.pheromone_min = None
+        self.pheromone_max = None
 
         # 获取logger实例，用于ACO算法内部的日志记录
         self.logger = logging.getLogger(__name__) # 使用模块名作为logger名
@@ -116,16 +120,50 @@ class AntColonyOptimizationTSP:
 
         return path
 
-    def _update_pheromones(self, all_paths, best_path_distance_current_iter):
+    def _update_pheromones(self, all_paths, best_path_distance_current_iter, best_overall_path, best_overall_distance):
         # Evaporation
         self.pheromone *= (1 - self.evaporation_rate)
 
-        # Deposition
-        for path, distance in all_paths:
-            pheromone_deposit = self.q / distance 
-            for i in range(len(path) - 1):
-                self.pheromone[path[i], path[i+1]] += pheromone_deposit
-                self.pheromone[path[i+1], path[i]] += pheromone_deposit # Symmetric TSP
+        # Deposition by the ant that constructed the best_overall_path in this iteration or globally
+        # In MMAS, typically only one ant (iteration-best or global-best) deposits pheromone.
+        # Here, we'll use the global-best ant for deposition, which is a common MMAS variant.
+        if best_overall_path is not None and best_overall_distance != float('inf'):
+            pheromone_deposit = self.q / best_overall_distance
+            for i in range(len(best_overall_path) - 1):
+                self.pheromone[best_overall_path[i], best_overall_path[i+1]] += pheromone_deposit
+                self.pheromone[best_overall_path[i+1], best_overall_path[i]] += pheromone_deposit # Symmetric TSP
+        
+        # Enforce pheromone trail limits (MMAS feature)
+        if self.pheromone_max is None: # Initialize limits on first update or based on a strategy
+            # A common way to initialize pheromone_max for MMAS
+            # This assumes q=1 for this calculation, or adjust accordingly if q is part of the deposit amount
+            initial_global_best_estimate = best_overall_distance # Use the first found global best
+            if initial_global_best_estimate == float('inf') and all_paths:
+                initial_global_best_estimate = min(d for p,d in all_paths) # Use current iter best if global not set
+            
+            if initial_global_best_estimate != float('inf'):
+                self.pheromone_max = (1 / (self.evaporation_rate * initial_global_best_estimate)) * self.q # Adjusted for self.q
+                # P_min is often related to P_max and problem size, e.g., P_min = P_max / (2 * n_cities)
+                # Or a more complex formula involving probability of selecting non-optimal edges
+                self.pheromone_min = self.pheromone_max / (2 * self.n_cities) # Simplified P_min
+                # self.pheromone_min = self.pheromone_init # Alternative: ensure it doesn't drop below initial
+                self.logger.info(f"MMAS Pheromone limits initialized: MAX={self.pheromone_max:.4f}, MIN={self.pheromone_min:.4f}")
+            else:
+                # Fallback if no valid distance found yet, though unlikely with proper initialization
+                self.pheromone_min = self.pheromone_init * 0.1 
+                self.pheromone_max = self.pheromone_init * 10
+                self.logger.warning("MMAS Pheromone limits fallback used due to no initial best distance.")
+
+
+        if self.pheromone_min is not None and self.pheromone_max is not None:
+            self.pheromone = np.clip(self.pheromone, self.pheromone_min, self.pheromone_max)
+        # else: # This part is removed as elite ant pheromone update is not standard MMAS
+            # # Fallback to Elite Ant System style if limits are not yet defined (should not happen after first iter)
+            # if best_overall_path is not None and best_overall_distance != float('inf'):
+            #     elite_pheromone_deposit = self.elite_weight * (self.q / best_overall_distance)
+            #     for i in range(len(best_overall_path) - 1):
+            #         self.pheromone[best_overall_path[i], best_overall_path[i+1]] += elite_pheromone_deposit
+            #         self.pheromone[best_overall_path[i+1], best_overall_path[i]] += elite_pheromone_deposit
 
     def run(self):
         best_overall_path = None
@@ -168,7 +206,8 @@ class AntColonyOptimizationTSP:
             else:
                 average_distances_progress.append(float('inf')) # 如果没有路径，则记录为无穷大
 
-            self._update_pheromones(all_paths_this_iteration, current_iter_best_distance)
+            # 传递 best_overall_path 和 best_overall_distance
+            self._update_pheromones(all_paths_this_iteration, current_iter_best_distance, best_overall_path, best_overall_distance)
             convergence_progress.append(best_overall_distance) # 记录的是到目前为止的全局最优
 
             if iteration % 10 == 0 or iteration == self.n_iterations - 1:

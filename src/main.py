@@ -187,18 +187,17 @@ def main():
         plot_title_params = f"种群: {population_size}, 精英比例: {elite_rate}, 变异率: {mutation_rate}, 交叉率: {crossover_rate}, 代数: {generations}, 锦标赛: {tournament_size}"
 
     elif algorithm_type == "ACO":
-        # ACO 参数 (保持用户上次设定的优化参数)
-        n_ants_aco = 50           # 蚂蚁数量
-        n_iterations_aco = 200    # 迭代次数 (用户指定)
-        alpha_aco = 1.0           # 信息素重要程度因子
-        beta_aco = 5.0            # 启发函数重要程度因子 (用户指定)
-        evaporation_rate_aco = 0.7 # 信息素挥发率 (调整以增加探索)
-        q_aco = 100               # 信息素强度常数
-        pheromone_init_aco = 0.1  # 初始信息素浓度
-        elite_weight_aco = 1.5    # 精英蚂蚁权重 (调整以减少最优路径主导)
+        # ACO 参数
+        n_ants_aco = 50
+        n_iterations_aco = 300  # 从 500 恢复到 300
+        alpha_aco = 1.0
+        beta_aco = 5.0
+        evaporation_rate_aco = 0.55  # 从 0.4 恢复到 0.55
+        q_aco = 100
+        pheromone_init_aco = 0.1
 
-        algorithm_name = f"ACO (精英策略, 蚂蚁数={n_ants_aco}, 迭代={n_iterations_aco}, alpha={alpha_aco}, beta={beta_aco}, evap={evaporation_rate_aco}, elite_w={elite_weight_aco})"
-        logger.info(f"ACO 参数: 蚂蚁数量={n_ants_aco}, 迭代次数={n_iterations_aco}, alpha={alpha_aco}, beta={beta_aco}, 挥发率={evaporation_rate_aco}, Q={q_aco}, 初始信息素={pheromone_init_aco}, 精英权重={elite_weight_aco}")
+        algorithm_name = f"ACO_MMAS (蚂蚁数={n_ants_aco}, 迭代={n_iterations_aco}, alpha={alpha_aco}, beta={beta_aco}, evap={evaporation_rate_aco})" # 更新算法名称以反映MMAS
+        logger.info(f"ACO 参数: 蚂蚁数量={n_ants_aco}, 迭代次数={n_iterations_aco}, alpha={alpha_aco}, beta={beta_aco}, 挥发率={evaporation_rate_aco}, Q={q_aco}, 初始信息素={pheromone_init_aco}") # 移除了精英权重
         
         solver = AntColonyOptimizationTSP(
             cities_coords=city_coordinates,
@@ -210,10 +209,9 @@ def main():
             q=q_aco,
             pheromone_init=pheromone_init_aco,
             start_city_idx=start_city_index,
-            end_city_idx=end_city_index,
-            elite_weight=elite_weight_aco # 传递精英权重
+            end_city_idx=end_city_index
         )
-        plot_title_params = f"蚂蚁: {n_ants_aco}, 迭代: {n_iterations_aco}, Alpha: {alpha_aco}, Beta: {beta_aco}, Rho: {evaporation_rate_aco}, 精英权重: {elite_weight_aco}"
+        plot_title_params = f"MMAS - 蚂蚁: {n_ants_aco}, 迭代: {n_iterations_aco}, Alpha: {alpha_aco}, Beta: {beta_aco}, Rho: {evaporation_rate_aco}" # 更新绘图标题参数
 
     else:
         logger.error(f"错误: 未知的算法类型 '{algorithm_type}'") # 使用 logger 实例
