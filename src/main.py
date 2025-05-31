@@ -20,15 +20,20 @@ from src.algorithm import GeneticAlgorithmTSP
 from src.aco_algorithm import AntColonyOptimizationTSP # 导入蚁群算法
 from src.utils import load_coordinates, total_distance
 
-def setup_logging(algorithm_type_for_filename="general"):
-    """配置日志记录"""
-    log_dir = os.path.join(_PROJECT_ROOT, "logs")
-    os.makedirs(log_dir, exist_ok=True)
+# 全局变量，用于存储日志文件名，方便后续绘图函数引用
+current_log_file_name = ""
 
-    current_time_str = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    # 在日志文件名中加入算法类型
-    log_file_name = f"{current_time_str}_{algorithm_type_for_filename}.log"
-    log_file_path = os.path.join(log_dir, log_file_name)
+def setup_logging(algorithm_name): # 添加 algorithm_name 参数
+    """配置日志记录器，将日志同时输出到控制台和文件。"""
+    global current_log_file_name
+    log_dir = "logs"
+    if not os.path.exists(log_dir):
+        os.makedirs(log_dir)
+
+    # 使用 algorithm_name 参数动态生成文件名
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    current_log_file_name = f"{timestamp}_{algorithm_name}.log" # 使用 algorithm_name
+    log_file_path = os.path.join(log_dir, current_log_file_name)
 
     logger = logging.getLogger() # 获取根记录器
     logger.setLevel(logging.INFO) # 设置全局日志级别
@@ -109,11 +114,22 @@ def plot_route_and_convergence(coords, route, progress, average_progress=None, t
     plt.show()
 
 def main():
-    # --- 选择算法 ---
-    # algorithm_type = "GA"  # 可选 "GA" (遗传算法) 或 "ACO" (蚁群算法)
-    algorithm_type = "GA" 
+    # --- 用户选择算法 ---
+    # 请在此处取消注释您希望运行的算法类型，或修改为 input() 方式动态选择:
+    # algorithm_type = "GA"  # 遗传算法
+    algorithm_type = "ACO" # 蚁群算法
+    # 例如，若要动态选择:
+    # chosen_algo = input("请选择算法类型 (GA 或 ACO): ").strip().upper()
+    # while chosen_algo not in ["GA", "ACO"]:
+    #     print("无效的输入，请输入 GA 或 ACO.")
+    #     chosen_algo = input("请选择算法类型 (GA 或 ACO): ").strip().upper()
+    # algorithm_type = chosen_algo
 
-    setup_logging(algorithm_type_for_filename=algorithm_type) # 在 main 函数开始时调用日志设置, 传入算法类型
+    # --- 配置日志 ---
+    # 确保 setup_logging 在 algorithm_type 确定后调用
+    setup_logging(algorithm_type) 
+    logger = logging.getLogger(__name__) # 获取在setup_logging中配置的logger
+    logger.info(f"选择的算法: {algorithm_type}")
 
     # 获取当前脚本文件所在的目录
     current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -123,24 +139,21 @@ def main():
     try:
         city_coordinates = load_coordinates(data_file)
     except FileNotFoundError:
-        logging.error(f"错误: 数据文件未找到于 {data_file}")
-        logging.error("请确保 \'coordinates.txt\' 文件位于 \'python-tsp-solver/data/\' 目录下。")
+        logger.error(f"错误: 数据文件未找到于 {data_file}") # 使用 logger 实例
+        logger.error("请确保 'coordinates.txt' 文件位于 'python-tsp-solver/data/' 目录下。") # 使用 logger 实例
         return
     except ValueError as e:
-        logging.error(f"错误: 加载坐标时出错: {e}")
+        logger.error(f"错误: 加载坐标时出错: {e}") # 使用 logger 实例
         return
 
     num_cities = len(city_coordinates)
     if num_cities == 0:
-        logging.error("错误: 未加载任何城市坐标。")
+        logger.error("错误: 未加载任何城市坐标。") # 使用 logger 实例
         return
     
-    logging.info(f"成功加载 {num_cities} 个城市坐标。")
+    logger.info(f"成功加载 {num_cities} 个城市坐标。")
 
-    # --- 选择算法 ---
-    # algorithm_type = "GA"  # 可选 "GA" (遗传算法) 或 "ACO" (蚁群算法)
-    algorithm_type = "GA" 
-
+    # --- 定义起点和终点 ---
     start_city_index = 0
     end_city_index = num_cities - 1 # 默认最后一个城市为终点
 
@@ -174,36 +187,36 @@ def main():
         plot_title_params = f"种群: {population_size}, 精英比例: {elite_rate}, 变异率: {mutation_rate}, 交叉率: {crossover_rate}, 代数: {generations}, 锦标赛: {tournament_size}"
 
     elif algorithm_type == "ACO":
-        # 蚁群算法参数
-        n_ants = 50                 # 蚂蚁数量 (例如: 城市数量的 10%-50%)
-        n_iterations = 100          # 迭代次数
-        alpha = 1.0                 # 信息素重要程度因子
-        beta = 3.0                  # 启发函数重要程度因子 (距离的倒数)
-        evaporation_rate = 0.3      # 信息素挥发率
-        q_val = 100.0               # 信息素强度常量
-        pheromone_init_val = 0.1    # 初始信息素值
+        # ACO 参数 (保持用户上次设定的优化参数)
+        n_ants_aco = 50           # 蚂蚁数量
+        n_iterations_aco = 200    # 迭代次数 (用户指定)
+        alpha_aco = 1.0           # 信息素重要程度因子
+        beta_aco = 5.0            # 启发函数重要程度因子 (用户指定)
+        evaporation_rate_aco = 0.7 # 信息素挥发率 (调整以增加探索)
+        q_aco = 100               # 信息素强度常数
+        pheromone_init_aco = 0.1  # 初始信息素浓度
+        elite_weight_aco = 1.5    # 精英蚂蚁权重 (调整以减少最优路径主导)
 
-        logging.info(f"\\n开始蚁群算法优化...")
-        logging.info(f"参数设置: 蚂蚁数量={n_ants}, 迭代次数={n_iterations}, alpha={alpha}, beta={beta}, rho={evaporation_rate}, Q={q_val}")
-        logging.info(f"起点城市索引: {start_city_index}, 终点城市索引: {end_city_index}")
-
+        algorithm_name = f"ACO (精英策略, 蚂蚁数={n_ants_aco}, 迭代={n_iterations_aco}, alpha={alpha_aco}, beta={beta_aco}, evap={evaporation_rate_aco}, elite_w={elite_weight_aco})"
+        logger.info(f"ACO 参数: 蚂蚁数量={n_ants_aco}, 迭代次数={n_iterations_aco}, alpha={alpha_aco}, beta={beta_aco}, 挥发率={evaporation_rate_aco}, Q={q_aco}, 初始信息素={pheromone_init_aco}, 精英权重={elite_weight_aco}")
+        
         solver = AntColonyOptimizationTSP(
             cities_coords=city_coordinates,
-            n_ants=n_ants,
-            n_iterations=n_iterations,
-            alpha=alpha,
-            beta=beta,
-            evaporation_rate=evaporation_rate,
-            q=q_val,
-            pheromone_init=pheromone_init_val,
+            n_ants=n_ants_aco,
+            n_iterations=n_iterations_aco,
+            alpha=alpha_aco,
+            beta=beta_aco,
+            evaporation_rate=evaporation_rate_aco,
+            q=q_aco,
+            pheromone_init=pheromone_init_aco,
             start_city_idx=start_city_index,
-            end_city_idx=end_city_index
+            end_city_idx=end_city_index,
+            elite_weight=elite_weight_aco # 传递精英权重
         )
-        algorithm_name = "蚁群算法"
-        plot_title_params = f"蚂蚁: {n_ants}, 迭代: {n_iterations}, Alpha: {alpha}, Beta: {beta}, Rho: {evaporation_rate}"
+        plot_title_params = f"蚂蚁: {n_ants_aco}, 迭代: {n_iterations_aco}, Alpha: {alpha_aco}, Beta: {beta_aco}, Rho: {evaporation_rate_aco}, 精英权重: {elite_weight_aco}"
 
     else:
-        logging.error(f"错误: 未知的算法类型 \'{algorithm_type}\'")
+        logger.error(f"错误: 未知的算法类型 '{algorithm_type}'") # 使用 logger 实例
         return
 
     try:
@@ -213,25 +226,24 @@ def main():
         end_time = time.time() # 记录结束时间
         execution_time = end_time - start_time # 计算运行时间
     except ValueError as e:
-        logging.error(f"算法运行时出错: {e}")
+        logger.error(f"算法运行时出错: {e}") # 使用 logger 实例
         return
     except Exception as e: # 捕获开发过程中可能出现的更广泛的异常
-        logging.exception(f"算法运行时发生意外错误:") # 使用 logging.exception 会自动包含堆栈信息
+        logger.exception(f"算法运行时发生意外错误:") # logger.exception 记录异常信息
         return
 
-
-    logging.info("\\n优化完成。")
+    logger.info("\\n优化完成。") # 使用 logger 实例
     if best_route_indices:
-        logging.info(f"最佳路径索引: {best_route_indices}")
-        logging.info(f"最短总距离: {best_distance:.4f}")
-        logging.info(f"算法运行时间: {execution_time:.4f} 秒") 
+        logger.info(f"最佳路径索引: {best_route_indices}") # 使用 logger 实例
+        logger.info(f"最短总距离: {best_distance:.4f}") # 使用 logger 实例
+        logger.info(f"算法运行时间: {execution_time:.4f} 秒")  # 使用 logger 实例
         if average_distances_progress:
-            logging.info(f"最后一代/迭代的平均距离: {average_distances_progress[-1]:.4f}")
+            logger.info(f"最后一代/迭代的平均距离: {average_distances_progress[-1]:.4f}") # 使用 logger 实例
         # 绘制结果，传入平均距离数据
         plot_route_and_convergence(city_coordinates, best_route_indices, convergence_progress, average_distances_progress,
                                    title=f"{algorithm_name} TSP 解决方案 ({plot_title_params})")
     else:
-        logging.info("未能找到有效路径。")
+        logger.info("未能找到有效路径。") # 使用 logger 实例
 
 if __name__ == "__main__":
     main()
