@@ -58,7 +58,7 @@ def setup_logging(algorithm_name): # 添加 algorithm_name 参数
 
     logging.info(f"日志功能已启动。日志文件: {log_file_path}")
 
-def plot_route_and_convergence(coords, route, progress, average_progress=None, title="TSP 解决方案"):
+def plot_route_and_convergence(coords, route, progress, average_progress=None, title="TSP 解决方案", algorithm_name=""): # 添加 algorithm_name 参数
     """绘制路线图和收敛曲线
     
     Args:
@@ -67,6 +67,7 @@ def plot_route_and_convergence(coords, route, progress, average_progress=None, t
         progress: 最优距离的收敛过程列表
         average_progress: 平均距离的收敛过程列表 (可选)
         title: 图表总标题
+        algorithm_name: 算法名称，用于保存文件名
     """
     # 解决 matplotlib 中文乱码问题
     plt.rcParams['font.sans-serif'] = ['SimHei']  # 指定默认字体为黑体
@@ -111,19 +112,54 @@ def plot_route_and_convergence(coords, route, progress, average_progress=None, t
 
     plt.suptitle(title)
     plt.tight_layout(rect=[0, 0, 1, 0.96]) # 调整布局以适应总标题
+
+    # --- 保存图像 ---
+    images_dir = "images"
+    if not os.path.exists(images_dir):
+        os.makedirs(images_dir)
+    
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    # 从 title 中提取参数部分，或者直接使用 algorithm_name 和时间戳
+    # 为了简化，我们这里主要使用 algorithm_name 和 timestamp
+    # 如果 title 包含非常详细的参数，可以考虑解析 title
+    safe_algo_name = "".join(c if c.isalnum() or c in (' ', '_') else '_' for c in algorithm_name).rstrip()
+    image_filename = f"{timestamp}_{safe_algo_name}_plot.png"
+    image_path = os.path.join(images_dir, image_filename)
+    
+    try:
+        plt.savefig(image_path)
+        logging.info(f"图像已保存到: {image_path}") # 使用 logging 记录保存路径
+    except Exception as e:
+        logging.error(f"保存图像时出错: {e}") # 使用 logging 记录错误
+
     plt.show()
 
 def main():
     # --- 用户选择算法 ---
-    # 请在此处取消注释您希望运行的算法类型，或修改为 input() 方式动态选择:
-    # algorithm_type = "GA"  # 遗传算法
-    algorithm_type = "ACO" # 蚁群算法
-    # 例如，若要动态选择:
-    # chosen_algo = input("请选择算法类型 (GA 或 ACO): ").strip().upper()
-    # while chosen_algo not in ["GA", "ACO"]:
-    #     print("无效的输入，请输入 GA 或 ACO.")
-    #     chosen_algo = input("请选择算法类型 (GA 或 ACO): ").strip().upper()
-    # algorithm_type = chosen_algo
+    available_algorithms = {
+        1: ("GA", "遗传算法"),
+        2: ("ACO", "蚁群算法")
+    }
+
+    print("请选择要运行的算法:")
+    for key, (code, name) in available_algorithms.items():
+        print(f"{key}. {name} ({code})")
+
+    chosen_algo_num = None
+    while True:
+        try:
+            user_input = input(f"请输入算法序号 (1-{len(available_algorithms)}): ").strip()
+            chosen_algo_num = int(user_input)
+            if chosen_algo_num in available_algorithms:
+                break
+            else:
+                print(f"无效的序号。请输入 1 到 {len(available_algorithms)} 之间的数字。")
+        except ValueError:
+            print("无效的输入，请输入数字。")
+
+    algorithm_type = available_algorithms[chosen_algo_num][0]
+    print(f"您选择了: {available_algorithms[chosen_algo_num][1]}")
+
 
     # --- 配置日志 ---
     # 确保 setup_logging 在 algorithm_type 确定后调用
@@ -163,8 +199,8 @@ def main():
         elite_rate = 0.1            # 精英保留比例 (例如 0.1 表示保留10%的精英)
         mutation_rate = 0.05       # 变异率
         crossover_rate = 0.8        # 交叉概率
-        generations = 2000           # 迭代代数
-        tournament_size = 3         # 锦标赛选择的锦标赛大小
+        generations = 3000           # 迭代代数
+        tournament_size = 4         # 锦标赛选择的锦标赛大小
 
         logging.info(f"\\n开始遗传算法优化...")
         # 更新打印信息以反映精英比例和锦标赛大小
@@ -189,7 +225,7 @@ def main():
     elif algorithm_type == "ACO":
         # ACO 参数
         n_ants_aco = 50
-        n_iterations_aco = 300  # 从 500 恢复到 300
+        n_iterations_aco = 500  # 从 500 恢复到 300
         alpha_aco = 1.0
         beta_aco = 5.0
         evaporation_rate_aco = 0.55  # 从 0.4 恢复到 0.55
@@ -237,9 +273,10 @@ def main():
         logger.info(f"算法运行时间: {execution_time:.4f} 秒")  # 使用 logger 实例
         if average_distances_progress:
             logger.info(f"最后一代/迭代的平均距离: {average_distances_progress[-1]:.4f}") # 使用 logger 实例
-        # 绘制结果，传入平均距离数据
+        # 绘制结果，传入平均距离数据和算法名称
         plot_route_and_convergence(city_coordinates, best_route_indices, convergence_progress, average_distances_progress,
-                                   title=f"{algorithm_name} TSP 解决方案 ({plot_title_params})")
+                                   title=f"{algorithm_name} TSP 解决方案 ({plot_title_params})",
+                                   algorithm_name=algorithm_name) # 传递 algorithm_name
     else:
         logger.info("未能找到有效路径。") # 使用 logger 实例
 
