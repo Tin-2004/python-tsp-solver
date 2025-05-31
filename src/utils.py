@@ -45,6 +45,6 @@ def total_distance(route, cities_coords):
     return dist
 
 def format_results(path, distance):
-    result = "Optimal Path: " + " -> ".join(map(str, path)) + "\n"
-    result += f"Total Distance: {distance:.2f}"
+    result = "最优路径: " + " -> ".join(map(str, path)) + "\\n"
+    result += f"总距离: {distance:.2f}"
     return result

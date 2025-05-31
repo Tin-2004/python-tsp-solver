@@ -14,12 +14,21 @@ import random
 from src.utils import total_distance
 
 class GeneticAlgorithmTSP:
-    def __init__(self, cities_coords, population_size, elite_size, mutation_rate, generations, start_city_idx=0, end_city_idx=None):
+    def __init__(self, cities_coords, population_size, elite_rate, mutation_rate, generations, crossover_rate=0.9, start_city_idx=0, end_city_idx=None): # elite_size -> elite_rate
         self.cities_coords = cities_coords
         self.num_cities = len(cities_coords)
         self.population_size = population_size
-        self.elite_size = elite_size # 保留最优个体的数量
+        self.elite_rate = elite_rate # 新增：精英比例
+        # 根据精英比例计算精英数量，确保至少为0
+        self.elite_size = max(0, int(self.population_size * self.elite_rate))
+        # 如果设置了精英比例但计算出的精英数量为0（由于种群太小或比例太低），并且种群大于0，则至少保留一个精英
+        if self.elite_rate > 0 and self.elite_size == 0 and self.population_size > 0:
+            self.elite_size = 1
+            print(f"提示: 由于种群大小 ({self.population_size}) 和精英比例 ({self.elite_rate}) 导致计算精英数量为0, 已自动设置为保留1个精英。")
+
+
         self.mutation_rate = mutation_rate
+        self.crossover_rate = crossover_rate
         self.generations = generations
         self.start_city_idx = start_city_idx
         # 如果未指定 end_city_idx，则默认为最后一个城市
@@ -121,16 +130,31 @@ class GeneticAlgorithmTSP:
     def _breed_population(self, matingpool):
         """繁衍新一代种群"""
         children = []
-        length = len(matingpool) - self.elite_size
-        pool = random.sample(matingpool, len(matingpool)) # 打乱交配池
+        # length 是需要通过交叉或复制产生的非精英子代的数量
+        length = self.population_size - self.elite_size 
+        
+        # matingpool 包含了被选中的个体，精英个体通常排在前面（如果已排序）
+        # pool 是 matingpool 的一个打乱顺序的副本，用于从中选择父代
+        pool = random.sample(matingpool, len(matingpool))
 
-        # 保留精英个体到下一代
+        # 1. 保留精英个体到下一代 (作为副本)
         for i in range(self.elite_size):
-            children.append(matingpool[i])
+            # 假设 matingpool 的前 elite_size 个是精英
+            children.append(list(matingpool[i])) 
 
-        # 交叉产生新的子代
+        # 2. 通过交叉或复制产生剩余的 length 个子代
         for i in range(length):
-            child = self._crossover(pool[i], pool[len(matingpool)-1-i])
+            # 从打乱的父代池 pool 中选择父代
+            # 使用原始的配对策略: pool[i] 和 pool[len(pool)-1-i]
+            # 确保索引有效，尽管对于此特定配对，如果 length 合理，通常是有效的
+            parent1 = pool[i % len(pool)] # 使用模运算以防万一
+            parent2 = pool[(len(pool)-1-i) % len(pool)]
+
+            if random.random() < self.crossover_rate:
+                child = self._crossover(parent1, parent2)
+            else:
+                # 如果不交叉，则从两个父代中随机选择一个作为子代 (的副本)
+                child = list(random.choice([parent1, parent2]))
             children.append(child)
         return children
 
@@ -156,54 +180,57 @@ class GeneticAlgorithmTSP:
         return mutated_pop
 
     def run(self):
-        """运行遗传算法"""
-        if self.num_cities_to_permute == 0: # 特殊情况：只有起点和终点
-            best_perm = []
-            best_route = self._get_full_route(best_perm)
-            best_distance = total_distance(best_route, self.cities_coords)
-            print(f"只有起点和终点，无需优化。")
-            print(f"最佳路径: {best_route}")
-            print(f"最短距离: {best_distance}")
-            return best_route, best_distance, []
+        population = self._create_initial_population()
+        best_overall_route_perm = None
+        best_overall_distance = float('inf')
+        convergence_progress = [] # 记录每代的最优距离
+        average_distances_progress = [] # 新增：记录每代的平均距离
 
-        pop = self._create_initial_population()
-        
-        # 存储每一代的最佳距离，用于绘图
-        progress = []
-        
-        # 初始化全局最优解
-        initial_ranked_pop = self._rank_routes(pop)
-        overall_best_perm_idx = initial_ranked_pop[0][0]
-        overall_best_perm = pop[overall_best_perm_idx]
-        overall_best_route = self._get_full_route(overall_best_perm)
-        overall_best_distance = total_distance(overall_best_route, self.cities_coords)
-        progress.append(overall_best_distance)
+        print(f"开始遗传算法，总共 {self.generations} 代，种群大小 {self.population_size}")
 
-        print(f"初始种群最佳距离: {overall_best_distance}")
+        for generation in range(self.generations):
+            # 在每一代开始时，我们有当前的 population
+            current_generation_population = population # 使用明确的变量名
 
-        for i in range(self.generations):
-            ranked_pop = self._rank_routes(pop)
-            selection_results = self._selection(ranked_pop)
-            matingpool = self._mating_pool(pop, selection_results)
-            children = self._breed_population(matingpool)
-            next_generation = self._mutate_population(children)
-            pop = next_generation
+            ranked_pop = self._rank_routes(current_generation_population)
+            current_gen_best_fitness = ranked_pop[0][1]
+            current_gen_best_distance = 1 / current_gen_best_fitness
 
-            current_gen_best_perm_idx = self._rank_routes(pop)[0][0]
-            current_gen_best_perm = pop[current_gen_best_perm_idx]
-            current_gen_best_route = self._get_full_route(current_gen_best_perm)
-            current_gen_best_distance = total_distance(current_gen_best_route, self.cities_coords)
-            progress.append(current_gen_best_distance) # 记录当前代最佳距离用于收敛曲线
+            # 计算并记录当前代的平均距离
+            current_gen_total_distance = 0
+            if len(current_generation_population) > 0:
+                for individual_perm in current_generation_population:
+                    full_route = self._get_full_route(individual_perm)
+                    current_gen_total_distance += total_distance(full_route, self.cities_coords)
+                current_gen_avg_distance = current_gen_total_distance / len(current_generation_population)
+            else:
+                current_gen_avg_distance = float('inf')
+            average_distances_progress.append(current_gen_avg_distance)
 
-            # 更新全局最优解
-            if current_gen_best_distance < overall_best_distance:
-                overall_best_distance = current_gen_best_distance
-                overall_best_perm = current_gen_best_perm
+            if current_gen_best_distance < best_overall_distance:
+                best_overall_distance = current_gen_best_distance
+                best_overall_route_perm = current_generation_population[ranked_pop[0][0]]
             
-            if (i + 1) % 10 == 0 or i == 0 : # 每10代打印一次信息 (使用当前代最佳)
-                print(f"第 {i+1} 代: 当前代最佳距离 = {current_gen_best_distance:.2f}, 全局最佳距离 = {overall_best_distance:.2f}")
+            convergence_progress.append(best_overall_distance) # 记录的是到目前为止的全局最优
+
+            if generation % 10 == 0 or generation == self.generations - 1:
+                print(f"代 {generation+1}/{self.generations} - 当前代最优: {current_gen_best_distance:.2f}, 全局最优: {best_overall_distance:.2f}, 当前代平均: {current_gen_avg_distance:.2f}")
+
+            selected_indices = self._selection(ranked_pop)
+            matingpool = self._mating_pool(current_generation_population, selected_indices)
+            children = self._breed_population(matingpool)
+            population = self._mutate_population(children) # 更新 population 以供下一代使用
         
-        # 返回全局最优解
-        final_best_route = self._get_full_route(overall_best_perm)
-        
-        return final_best_route, overall_best_distance, progress
+        best_full_route = self._get_full_route(best_overall_route_perm if best_overall_route_perm is not None else self._create_individual()) 
+        if best_overall_route_perm is None and self.num_cities > 0:
+            print("警告: GA未能确定最优个体排列，将使用随机个体构建最终路径。")
+            if not best_full_route or len(best_full_route) < 2 :
+                if self.num_cities == 2:
+                    best_full_route = [self.start_city_idx, self.end_city_idx]
+                    best_overall_distance = total_distance(best_full_route, self.cities_coords)
+                else: 
+                    raise RuntimeError("GA算法未能找到任何有效路径。") 
+        elif self.num_cities == 0:
+            return [], 0, [], []
+
+        return best_full_route, best_overall_distance, convergence_progress, average_distances_progress
