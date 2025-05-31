@@ -1,3 +1,14 @@
+import sys
+import os
+
+# Add the project root directory (python-tsp-solver) to sys.path
+# This ensures that imports like 'from src.module' work correctly.
+# os.path.dirname(__file__) is the 'src' directory.
+# os.path.join(os.path.dirname(__file__), '..') is the 'python-tsp-solver' directory.
+_PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if _PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, _PROJECT_ROOT)
+
 import numpy as np
 import random
 from src.utils import total_distance
