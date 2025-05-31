@@ -1,6 +1,6 @@
 import numpy as np
 import random
-from .utils import total_distance
+from src.utils import total_distance
 
 class GeneticAlgorithmTSP:
     def __init__(self, cities_coords, population_size, elite_size, mutation_rate, generations, start_city_idx=0, end_city_idx=None):

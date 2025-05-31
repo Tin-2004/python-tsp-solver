@@ -2,8 +2,8 @@
 
 import numpy as np
 import matplotlib.pyplot as plt
-from algorithm import TSPSolver, GeneticAlgorithmTSP
-from utils import load_coordinates, format_results, total_distance
+from src.algorithm import GeneticAlgorithmTSP  # Removed TSPSolver
+from src.utils import load_coordinates, format_results, total_distance
 import os
 
 def plot_route_and_convergence(coords, route, progress, title="TSP Solution"):
