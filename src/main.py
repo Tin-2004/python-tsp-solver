@@ -2,9 +2,9 @@
 
 import sys
 import os
-import time # 导入 time 模块
-import logging # 导入 logging 模块
-from datetime import datetime # 导入 datetime 模块
+import time # 导入 time 模块，用于计时等操作
+import logging # 导入 logging 模块，用于日志记录
+from datetime import datetime # 导入 datetime 模块，用于处理日期和时间
 
 # 将项目根目录 (python-tsp-solver) 添加到 sys.path
 # 这样可以确保 'from src.module' 这样的导入能够正确工作。
@@ -53,7 +53,7 @@ def setup_logging(algorithm_name): # 添加 algorithm_name 参数
     console_formatter = logging.Formatter('%(message)s') # 只输出消息
     console_handler.setFormatter(console_formatter)
     # 为了让控制台也能看到 INFO 级别以上的日志，可以为控制台处理器单独设置级别
-    # console_handler.setLevel(logging.INFO) 
+    # console_handler.setLevel(logging.INFO) # 此行已移除，因其为调试残留或非必要配置
     logger.addHandler(console_handler)
 
     logging.info(f"日志功能已启动。日志文件: {log_file_path}")
@@ -122,6 +122,7 @@ def plot_route_and_convergence(coords, route, progress, average_progress=None, t
     # 从 title 中提取参数部分，或者直接使用 algorithm_name 和时间戳
     # 为了简化，我们这里主要使用 algorithm_name 和 timestamp
     # 如果 title 包含非常详细的参数，可以考虑解析 title
+    # 清理算法名称，移除非法字符，确保文件名有效
     safe_algo_name = "".join(c if c.isalnum() or c in (' ', '_') else '_' for c in algorithm_name).rstrip()
     image_filename = f"{timestamp}_{safe_algo_name}_plot.png"
     image_path = os.path.join(images_dir, image_filename)
