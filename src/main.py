@@ -98,7 +98,7 @@ def main():
 
     # --- 选择算法 ---
     # algorithm_type = "GA"  # 可选 "GA" (遗传算法) 或 "ACO" (蚁群算法)
-    algorithm_type = "ACO" 
+    algorithm_type = "GA" 
 
     start_city_index = 0
     end_city_index = num_cities - 1 # 默认最后一个城市为终点
@@ -109,7 +109,7 @@ def main():
         elite_rate = 0.1            # 精英保留比例 (例如 0.1 表示保留10%的精英)
         mutation_rate = 0.05       # 变异率
         crossover_rate = 0.8        # 交叉概率
-        generations = 200           # 迭代代数
+        generations = 2000           # 迭代代数
 
         print(f"\\n开始遗传算法优化...")
         # 更新打印信息以反映精英比例

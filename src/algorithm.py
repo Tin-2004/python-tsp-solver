@@ -96,6 +96,51 @@ class GeneticAlgorithmTSP:
                         break
         return selection_results
 
+    def _selection_for_breeding(self, ranked_population_with_indices, current_population, num_to_select):
+        """
+        选择操作（轮盘赌选择），用于选择父代进行繁殖。
+        ranked_population_with_indices: list of (original_index, fitness)
+        current_population: the actual list of individuals
+        num_to_select: how many parent individuals to select
+        Returns a list of selected parent individuals (not indices).
+        """
+        selected_parents = []
+        
+        fitness_values = np.array([item[1] for item in ranked_population_with_indices])
+        
+        if np.sum(fitness_values <= 0) == len(fitness_values) or np.sum(fitness_values) == 0:
+            available_individuals = list(current_population) # Get actual individuals
+            if not available_individuals: # Should not happen if population_size > 0
+                return []
+            for _ in range(num_to_select):
+                selected_parents.append(list(random.choice(available_individuals)))
+        else:
+            positive_fitness_values = np.maximum(fitness_values, 1e-9)
+            total_fitness = np.sum(positive_fitness_values)
+
+            if total_fitness == 0:
+                available_individuals = list(current_population)
+                if not available_individuals:
+                    return []
+                for _ in range(num_to_select):
+                    selected_parents.append(list(random.choice(available_individuals)))
+            else:
+                selection_probs = positive_fitness_values / total_fitness
+                cumulative_probs = np.cumsum(selection_probs)
+                
+                for _ in range(num_to_select):
+                    pick = random.random()
+                    chosen_original_index = -1
+                    for i in range(len(ranked_population_with_indices)):
+                        if pick <= cumulative_probs[i]:
+                            chosen_original_index = ranked_population_with_indices[i][0]
+                            break
+                    if chosen_original_index == -1: # Fallback
+                        chosen_original_index = ranked_population_with_indices[-1][0]
+                    
+                    selected_parents.append(list(current_population[chosen_original_index]))
+        return selected_parents
+
     def _mating_pool(self, population, selection_results):
         """创建交配池"""
         matingpool = []
@@ -106,97 +151,124 @@ class GeneticAlgorithmTSP:
 
     def _crossover(self, parent1, parent2):
         """交叉操作（顺序交叉 OX1）"""
-        child = []
-        child_p1 = []
-        child_p2 = []
+        # Ensure parents are not empty and are lists
+        p1 = list(parent1) if parent1 is not None else []
+        p2 = list(parent2) if parent2 is not None else []
 
-        if not parent1 or not parent2: # 如果父代为空（例如只有2个城市的情况）
+        if not p1 or not p2 or len(p1) != len(p2) or not p1: 
+            # If parents are unsuitable for crossover (e.g. different lengths, or empty after permute),
+            # return one of them randomly, or an empty list if both are bad.
+            if p1: return list(p1)
+            if p2: return list(p2)
             return []
 
-        gene_a = int(random.random() * len(parent1))
-        gene_b = int(random.random() * len(parent1))
-
+        # gene_a and gene_b are indices for the segment to be copied from parent1
+        # Ensure len(p1)-1 is not negative if len(p1) is 0. Handled by initial check.
+        gene_a = random.randint(0, len(p1) - 1)
+        gene_b = random.randint(0, len(p1) - 1)
+        
         start_gene = min(gene_a, gene_b)
         end_gene = max(gene_a, gene_b)
 
-        for i in range(start_gene, end_gene):
-            child_p1.append(parent1[i])
+        child = [None] * len(p1)
+        child_p1_segment_list = [] # Store the segment from p1
 
-        child_p2 = [item for item in parent2 if item not in child_p1]
-
-        child = child_p1 + child_p2
+        # Copy the segment from parent1 to child and to child_p1_segment_list
+        for i in range(start_gene, end_gene + 1): 
+            child[i] = p1[i]
+            child_p1_segment_list.append(p1[i])        
+        
+        # Convert the segment from p1 to a set for efficient lookup
+        child_p1_segment_set = set(child_p1_segment_list)
+            
+        # Elements from p2 that are not in the copied segment from p1 (using the set for efficiency)
+        p2_remaining_elements = [gene for gene in p2 if gene not in child_p1_segment_set]
+        
+        # Fill in the Nones in child with elements from p2_remaining_elements
+        fill_idx = 0
+        for i in range(len(child)):
+            if child[i] is None:
+                if fill_idx < len(p2_remaining_elements):
+                    child[i] = p2_remaining_elements[fill_idx]
+                    fill_idx += 1
+                else:
+                    # This should not happen if p1 and p2 are valid permutations of the same set of cities
+                    # and p2_remaining_elements was correctly populated.
+                    # If it does, child might contain Nones, which needs to be handled.
+                    break # Break if no more elements to fill from p2_remaining
+        
+        # Final check for Nones, can happen if p2_remaining_elements was not enough
+        # or if num_cities_to_permute is very small and crossover points are at ends.
+        if None in child:
+            current_child_genes = [g for g in child if g is not None]
+            all_possible_genes = list(dict.fromkeys(p1 + p2)) # Unique genes from parents
+            missing_genes = [g for g in all_possible_genes if g not in current_child_genes]
+            random.shuffle(missing_genes) 
+            
+            fill_missing_idx = 0
+            for i in range(len(child)):
+                if child[i] is None:
+                    if fill_missing_idx < len(missing_genes):
+                        child[i] = missing_genes[fill_missing_idx]
+                        fill_missing_idx += 1
+                    else:
+                        # Fallback to returning a copy of a parent if child is still malformed.
+                        return list(p1) if random.random() < 0.5 else list(p2)
         return child
 
-    def _breed_population(self, matingpool):
-        """繁衍新一代种群"""
-        children = []
-        # length 是需要通过交叉或复制产生的非精英子代的数量
-        length = self.population_size - self.elite_size 
+
+    def _mutate(self, individual_perm):
+        """变异操作（反转变异）"""
+        if not individual_perm or len(individual_perm) < 2: # Cannot mutate if less than 2 elements
+            return list(individual_perm) # Return a copy
         
-        # matingpool 包含了被选中的个体，精英个体通常排在前面（如果已排序）
-        # pool 是 matingpool 的一个打乱顺序的副本，用于从中选择父代
-        pool = random.sample(matingpool, len(matingpool))
-
-        # 1. 保留精英个体到下一代 (作为副本)
-        for i in range(self.elite_size):
-            # 假设 matingpool 的前 elite_size 个是精英
-            children.append(list(matingpool[i])) 
-
-        # 2. 通过交叉或复制产生剩余的 length 个子代
-        for i in range(length):
-            # 从打乱的父代池 pool 中选择父代
-            # 使用原始的配对策略: pool[i] 和 pool[len(pool)-1-i]
-            # 确保索引有效，尽管对于此特定配对，如果 length 合理，通常是有效的
-            parent1 = pool[i % len(pool)] # 使用模运算以防万一
-            parent2 = pool[(len(pool)-1-i) % len(pool)]
-
-            if random.random() < self.crossover_rate:
-                child = self._crossover(parent1, parent2)
-            else:
-                # 如果不交叉，则从两个父代中随机选择一个作为子代 (的副本)
-                child = list(random.choice([parent1, parent2]))
-            children.append(child)
-        return children
-
-    def _mutate(self, individual):
-        """变异操作（交换变异）"""
-        if not individual or len(individual) < 2: # 如果个体为空或长度小于2，则不变异
-            return individual
-        for swapped in range(len(individual)):
-            if random.random() < self.mutation_rate:
-                swap_with = int(random.random() * len(individual))
-                city1 = individual[swapped]
-                city2 = individual[swap_with]
-                individual[swapped] = city2
-                individual[swap_with] = city1
-        return individual
-
-    def _mutate_population(self, population):
-        """对整个种群进行变异"""
-        mutated_pop = []
-        for ind in range(len(population)):
-            mutated_ind = self._mutate(population[ind])
-            mutated_pop.append(mutated_ind)
-        return mutated_pop
+        mutated_individual = list(individual_perm) # Work on a copy
+        if random.random() < self.mutation_rate:
+            # Select two distinct random indices for the segment
+            idx1, idx2 = sorted(random.sample(range(len(mutated_individual)), 2))
+            
+            # The segment to reverse is individual[idx1...idx2]
+            segment_to_reverse = mutated_individual[idx1:idx2+1] # Slice includes idx2
+            segment_to_reverse.reverse()
+            mutated_individual[idx1:idx2+1] = segment_to_reverse
+            
+        return mutated_individual
 
     def run(self):
         population = self._create_initial_population()
         best_overall_route_perm = None
         best_overall_distance = float('inf')
-        convergence_progress = [] # 记录每代的最优距离
-        average_distances_progress = [] # 新增：记录每代的平均距离
+        convergence_progress = []
+        average_distances_progress = []
 
-        print(f"开始遗传算法，总共 {self.generations} 代，种群大小 {self.population_size}")
+        if self.num_cities_to_permute == 0: # Only start and end city
+            # No permutation possible, route is fixed
+            fixed_route_perm = [] # Empty perm for intermediate cities
+            best_overall_route_perm = fixed_route_perm
+            best_full_route = self._get_full_route(fixed_route_perm)
+            best_overall_distance = total_distance(best_full_route, self.cities_coords)
+            convergence_progress = [best_overall_distance] * self.generations
+            average_distances_progress = [best_overall_distance] * self.generations
+            print(f"只有起点和终点，路径固定，距离: {best_overall_distance:.2f}")
+            return best_full_route, best_overall_distance, convergence_progress, average_distances_progress
+        
+        # Handle case where num_cities_to_permute is 1 (only one intermediate city)
+        # Crossover and mutation might behave unusually.
+        # GA might not be very effective here, but let it run.
+        if self.num_cities_to_permute == 1:
+            print("警告: 只有一个中间城市需要排列，遗传算法可能不是最优选择或行为可能受限。")
+
+
+        print(f"开始遗传算法，总共 {self.generations} 代，种群大小 {self.population_size}, 精英数量: {self.elite_size}")
 
         for generation in range(self.generations):
-            # 在每一代开始时，我们有当前的 population
-            current_generation_population = population # 使用明确的变量名
+            current_generation_population = population 
 
-            ranked_pop = self._rank_routes(current_generation_population)
-            current_gen_best_fitness = ranked_pop[0][1]
+            ranked_pop_with_indices = self._rank_routes(current_generation_population) 
+            
+            current_gen_best_fitness = ranked_pop_with_indices[0][1]
             current_gen_best_distance = 1 / current_gen_best_fitness
-
-            # 计算并记录当前代的平均距离
+            
             current_gen_total_distance = 0
             if len(current_generation_population) > 0:
                 for individual_perm in current_generation_population:
@@ -204,33 +276,147 @@ class GeneticAlgorithmTSP:
                     current_gen_total_distance += total_distance(full_route, self.cities_coords)
                 current_gen_avg_distance = current_gen_total_distance / len(current_generation_population)
             else:
-                current_gen_avg_distance = float('inf')
+                current_gen_avg_distance = float('inf') # Should not happen
             average_distances_progress.append(current_gen_avg_distance)
 
             if current_gen_best_distance < best_overall_distance:
                 best_overall_distance = current_gen_best_distance
-                best_overall_route_perm = current_generation_population[ranked_pop[0][0]]
+                best_overall_route_perm = list(current_generation_population[ranked_pop_with_indices[0][0]])
             
-            convergence_progress.append(best_overall_distance) # 记录的是到目前为止的全局最优
+            convergence_progress.append(best_overall_distance)
 
             if generation % 10 == 0 or generation == self.generations - 1:
                 print(f"代 {generation+1}/{self.generations} - 当前代最优: {current_gen_best_distance:.2f}, 全局最优: {best_overall_distance:.2f}, 当前代平均: {current_gen_avg_distance:.2f}")
 
-            selected_indices = self._selection(ranked_pop)
-            matingpool = self._mating_pool(current_generation_population, selected_indices)
-            children = self._breed_population(matingpool)
-            population = self._mutate_population(children) # 更新 population 以供下一代使用
+            next_generation_population = []
+
+            # 1. 直接保留精英个体
+            for i in range(self.elite_size):
+                elite_individual_index = ranked_pop_with_indices[i][0]
+                next_generation_population.append(list(current_generation_population[elite_individual_index]))
+
+            # 2. 生成剩余的非精英子代
+            num_offspring_to_generate = self.population_size - self.elite_size
+            offspring_generated_count = 0
+            
+            # Create a pool of parents for breeding using selection
+            # We need enough parents to generate num_offspring_to_generate.
+            # If each crossover produces one child, we need num_offspring_to_generate * 2 selections if pairing.
+            # Or select num_offspring_to_generate parents if each is used once with another.
+            # Let's select a pool of potential parents.
+            # The number of parents to select for the mating pool can be num_offspring_to_generate,
+            # and then we pair them up.
+            if num_offspring_to_generate > 0:
+                # Select a pool of parents for breeding.
+                # The size of this pool can be num_offspring_to_generate.
+                # We will then pick pairs from this pool.
+                # Ensure ranked_pop_with_indices is passed correctly.
+                parent_pool = self._selection_for_breeding(ranked_pop_with_indices, current_generation_population, num_offspring_to_generate * 2) # Get enough for pairs
+
+                if not parent_pool or len(parent_pool) < 2 and num_offspring_to_generate > 0 :
+                    # Fallback: if parent pool is too small, fill with random individuals from current pop
+                    # This might happen if selection_for_breeding has issues or pop is tiny.
+                    # print("警告: 父代选择池过小或为空，使用随机父代填充。")
+                    temp_fill_needed = num_offspring_to_generate - offspring_generated_count
+                    for _ in range(temp_fill_needed):
+                        if current_generation_population: # Check if current_generation_population is not empty
+                             random_parent_for_child = list(random.choice(current_generation_population))
+                             mutated_random_child = self._mutate(random_parent_for_child) # Mutate it
+                             next_generation_population.append(mutated_random_child)
+                             offspring_generated_count +=1
+                        else: # Cannot proceed if current_generation_population is empty
+                            break 
+                    # Ensure population size is maintained if we had to use this fallback for all offspring
+                    while len(next_generation_population) < self.population_size and current_generation_population:
+                        next_generation_population.append(list(random.choice(current_generation_population)))
+
+
+                idx = 0
+                while offspring_generated_count < num_offspring_to_generate and idx + 1 < len(parent_pool):
+                    parent1 = parent_pool[idx]
+                    parent2 = parent_pool[idx+1]
+                    
+                    child = []
+                    if random.random() < self.crossover_rate and self.num_cities_to_permute >= 2 : # Crossover only if enough cities to permute
+                        child = self._crossover(parent1, parent2)
+                        if not child or len(child) != self.num_cities_to_permute: # Crossover failed or produced wrong size
+                            child = list(parent1) if random.random() < 0.5 else list(parent2) # Fallback
+                    else:
+                        child = list(parent1) if random.random() < 0.5 else list(parent2) # Copy one parent
+
+                    # Ensure child is a valid permutation before mutation
+                    if not child or len(child) != self.num_cities_to_permute:
+                        # If child is still invalid, use a fresh random individual for this slot
+                        # This is a fallback for problematic crossovers/copies with very small num_cities_to_permute
+                        child = self._create_individual()
+
+
+                    mutated_child = self._mutate(child)
+                    next_generation_population.append(mutated_child)
+                    offspring_generated_count += 1
+                    idx += 2 # Move to next pair of parents
+
+                # If not enough offspring were generated (e.g. parent_pool was odd or too small)
+                # Fill remaining spots by mutating copies of existing elites or selected parents
+                # This is to ensure the population size is maintained.
+                while offspring_generated_count < num_offspring_to_generate:
+                    fallback_parent = []
+                    if next_generation_population : # Prefer to use already selected elites if available
+                        fallback_parent = list(random.choice(next_generation_population[:self.elite_size])) \
+                                           if self.elite_size > 0 and next_generation_population \
+                                           else (list(random.choice(parent_pool)) if parent_pool else self._create_individual())
+                    elif parent_pool:
+                        fallback_parent = list(random.choice(parent_pool))
+                    else: # Absolute fallback
+                        fallback_parent = self._create_individual()
+
+                    mutated_fallback_child = self._mutate(fallback_parent)
+                    next_generation_population.append(mutated_fallback_child)
+                    offspring_generated_count += 1
+            
+            population = next_generation_population
+
+        best_full_route = self._get_full_route(best_overall_route_perm) # Removed problematic conditional here
+                                                                    # best_overall_route_perm should be valid if GA ran.
         
-        best_full_route = self._get_full_route(best_overall_route_perm if best_overall_route_perm is not None else self._create_individual()) 
-        if best_overall_route_perm is None and self.num_cities > 0:
-            print("警告: GA未能确定最优个体排列，将使用随机个体构建最终路径。")
-            if not best_full_route or len(best_full_route) < 2 :
-                if self.num_cities == 2:
-                    best_full_route = [self.start_city_idx, self.end_city_idx]
-                    best_overall_distance = total_distance(best_full_route, self.cities_coords)
-                else: 
-                    raise RuntimeError("GA算法未能找到任何有效路径。") 
-        elif self.num_cities == 0:
+        # Final checks and error handling for result consistency
+        if best_overall_route_perm is None:
+            if self.num_cities_to_permute > 0 : # If there were cities to permute but no best_overall_route_perm
+                print("警告: GA未能确定最优个体排列，将尝试使用最后一代的最优个体。")
+                if population: # Check if population is not empty
+                    last_gen_ranked = self._rank_routes(population)
+                    if last_gen_ranked:
+                        best_overall_route_perm = list(population[last_gen_ranked[0][0]])
+                        best_full_route = self._get_full_route(best_overall_route_perm)
+                        best_overall_distance = 1 / last_gen_ranked[0][1] # Update distance
+                    else: # Population was empty or ranking failed
+                        best_overall_route_perm = self._create_individual() # Create a random one
+                        best_full_route = self._get_full_route(best_overall_route_perm)
+                        best_overall_distance = 1 / self._calculate_fitness(best_overall_route_perm)
+                else: # Population is empty, create a random one
+                    best_overall_route_perm = self._create_individual()
+                    best_full_route = self._get_full_route(best_overall_route_perm)
+                    best_overall_distance = 1 / self._calculate_fitness(best_overall_route_perm)
+
+            elif self.num_cities_to_permute == 0: # Only start and end, should have been handled
+                best_full_route = [self.start_city_idx, self.end_city_idx]
+                best_overall_distance = total_distance(best_full_route, self.cities_coords)
+        
+        if not best_full_route or len(best_full_route) != self.num_cities:
+             # Fallback if best_full_route is somehow malformed
+            if self.num_cities_to_permute == 0:
+                best_full_route = [self.start_city_idx, self.end_city_idx]
+            else: # Try to reconstruct from best_overall_route_perm or make a new one
+                if best_overall_route_perm and len(best_overall_route_perm) == self.num_cities_to_permute:
+                    best_full_route = self._get_full_route(best_overall_route_perm)
+                else: # Last resort
+                    best_overall_route_perm = self._create_individual()
+                    best_full_route = self._get_full_route(best_overall_route_perm)
+            # Recalculate distance if route was re-formed
+            best_overall_distance = total_distance(best_full_route, self.cities_coords)
+
+
+        if self.num_cities == 0: # Should be caught by __init__ but as a safeguard
             return [], 0, [], []
 
         return best_full_route, best_overall_distance, convergence_progress, average_distances_progress
