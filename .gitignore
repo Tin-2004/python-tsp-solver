@@ -120,3 +120,5 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+fuzzy_set_calculation.py
+hopfield_network_corrected.py
